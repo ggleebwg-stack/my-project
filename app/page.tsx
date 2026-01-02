@@ -10,7 +10,7 @@ import {
 } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { supabase } from '../lib/supabase'; 
-import { ChevronLeft, ChevronRight, Check, Trash2, Plus, Briefcase, Calendar as CalendarIcon, User, RefreshCcw, LayoutDashboard, Users, FolderKanban, ClipboardList, X, PieChart, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, Plus, Briefcase, Calendar as CalendarIcon, User, RefreshCcw, LayoutDashboard, Users, FolderKanban, ClipboardList, X, PieChart, AlertCircle, Lock, Unlock } from 'lucide-react';
 
 // --- Interfaces ---
 interface Project { 
@@ -220,6 +220,9 @@ export default function App() {
   const [viewType, setViewType] = useState<'project' | 'employee'>('project');
   const [checkedAssignmentIds, setCheckedAssignmentIds] = useState<Set<string>>(new Set());
   
+  // Admin Mode (Default: False = Guest)
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [targetProjectId, setTargetProjectId] = useState<string | null>(null);
 
@@ -379,7 +382,6 @@ export default function App() {
     let totalMM = 0;
     const overlapDays = eachDayOfInterval({ start: new Date(overlapStartTs), end: new Date(overlapEndTs) });
     
-    // Calendar Day 기준 계산
     overlapDays.forEach(day => {
       totalMM += 1 / getDaysInMonth(day);
     });
@@ -429,12 +431,29 @@ export default function App() {
     setViewDate(new Date());
   };
   
+  // Admin Toggle
+  const handleAdminToggle = () => {
+    if (isAdmin) {
+      setIsAdmin(false);
+    } else {
+      const inputInfo = window.prompt("관리자 비밀번호를 입력하세요:");
+      if (inputInfo === null) return;
+      const correctPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || '1234';
+      if (inputInfo === correctPassword) {
+        setIsAdmin(true);
+      } else {
+        alert("비밀번호가 일치하지 않습니다.");
+      }
+    }
+  };
+
   const toggleAssignmentCheck = (id: string) => {
     const newSet = new Set(checkedAssignmentIds);
     newSet.has(id) ? newSet.delete(id) : newSet.add(id);
     setCheckedAssignmentIds(newSet);
   };
   const handleBulkDeleteAssignments = async () => {
+    if (!isAdmin) return;
     if (checkedAssignmentIds.size === 0 || !confirm(`${checkedAssignmentIds.size}개의 할당을 삭제하시겠습니까?`)) return;
     const ids = Array.from(checkedAssignmentIds);
     await supabase.from('assignments').delete().in('id', ids);
@@ -444,19 +463,25 @@ export default function App() {
 
   // CRUD
   const handleAddEmployee = async () => { 
-    if (!newEmployeeName) return; 
+    if (!isAdmin || !newEmployeeName) return; 
     await supabase.from('employees').insert([{ name: newEmployeeName, employee_type: 'billable' }]); 
     setNewEmployeeName(''); 
   };
-  const handleRemoveEmployee = async (id: string) => { if(!confirm('삭제하시겠습니까?')) return; await supabase.from('employees').delete().eq('id', id); await supabase.from('assignments').delete().eq('employee_id', id); };
+  const handleRemoveEmployee = async (id: string) => { 
+    if(!isAdmin) return; 
+    if(!confirm('삭제하시겠습니까?')) return; 
+    await supabase.from('employees').delete().eq('id', id); 
+    await supabase.from('assignments').delete().eq('employee_id', id); 
+  };
   
   const handleUpdateEmployee = async (employee: Employee, changes: Partial<Employee>) => {
+    if (!isAdmin) return;
     setEmployees(prev => prev.map(e => e.id === employee.id ? { ...e, ...changes } : e));
     await supabase.from('employees').update(changes).eq('id', employee.id);
   };
 
-  // Badge Toggle Handler
   const handleToggleEmployeeType = async (employee: Employee) => {
+    if (!isAdmin) return;
     const types: EmployeeType[] = ['billable', 'internal', 'other_unit', 'outsourcing'];
     const currentIndex = types.indexOf(employee.employee_type);
     const nextType = types[(currentIndex + 1) % types.length];
@@ -465,7 +490,7 @@ export default function App() {
     await supabase.from('employees').update({ employee_type: nextType }).eq('id', employee.id);
   };
 
-  // Badge Style Helper
+  // Badges & Labels
   const getEmployeeTypeBadge = (type: EmployeeType) => {
     switch (type) {
       case 'billable': return 'bg-blue-100 text-blue-700 hover:bg-blue-200';
@@ -484,8 +509,6 @@ export default function App() {
       default: return type;
     }
   };
-
-  // Vertical Color Bar for Employee Row
   const getEmployeeColorIndicator = (type: EmployeeType) => {
     switch (type) {
       case 'billable': return 'bg-blue-500';
@@ -497,21 +520,28 @@ export default function App() {
   };
 
   const handleAddProject = async () => { 
-    if (!newProjectName) return; 
+    if (!isAdmin || !newProjectName) return; 
     const payload: any = { name: newProjectName, is_tentative: newProjectTentative };
     if (newProjectStart) payload.start_date = new Date(newProjectStart);
     if (newProjectEnd) payload.end_date = new Date(newProjectEnd);
     await supabase.from('projects').insert([payload]); 
     setNewProjectName(''); setNewProjectTentative(false); setNewProjectStart(''); setNewProjectEnd('');
   };
-  const handleRemoveProject = async (id: string) => { if(!confirm('삭제하시겠습니까?')) return; await supabase.from('projects').delete().eq('id', id); await supabase.from('assignments').delete().eq('project_id', id); };
+  const handleRemoveProject = async (id: string) => { 
+    if(!isAdmin) return; 
+    if(!confirm('삭제하시겠습니까?')) return; 
+    await supabase.from('projects').delete().eq('id', id); 
+    await supabase.from('assignments').delete().eq('project_id', id); 
+  };
   
   const handleUpdateProject = async (project: Project, changes: Partial<Project>) => {
+    if (!isAdmin) return;
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, ...changes } : p));
     await supabase.from('projects').update(changes).eq('id', project.id);
   };
 
   const toggleProjectTentative = async (project: Project) => {
+    if (!isAdmin) return;
     const newVal = !project.is_tentative;
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, is_tentative: newVal } : p));
     await supabase.from('projects').update({ is_tentative: newVal }).eq('id', project.id);
@@ -530,7 +560,12 @@ export default function App() {
   };
 
   const resetForm = () => { setEditingAssignment(null); setTask(''); setStartDate(''); setEndDate(''); setNonBill(false); setSelectedEmployeeId(''); setSelectedProjectId(''); };
-  const handleEditAssignment = (assignment: Assignment) => { setEditingAssignment(assignment); setSelectedEmployeeId(assignment.employee_id); setSelectedProjectId(assignment.project_id); setTask(assignment.task); setStartDate(format(assignment.start_date, 'yyyy-MM-dd')); setEndDate(format(assignment.end_date, 'yyyy-MM-dd')); setNonBill(assignment.non_bill); setCurrentTab('assignments'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  
+  const handleEditAssignment = (assignment: Assignment) => { 
+    if (!isAdmin) return;
+    setEditingAssignment(assignment); setSelectedEmployeeId(assignment.employee_id); setSelectedProjectId(assignment.project_id); setTask(assignment.task); setStartDate(format(assignment.start_date, 'yyyy-MM-dd')); setEndDate(format(assignment.end_date, 'yyyy-MM-dd')); setNonBill(assignment.non_bill); setCurrentTab('assignments'); window.scrollTo({ top: 0, behavior: 'smooth' }); 
+  };
+  
   const handleAssign = async () => { if (!selectedEmployeeId || !selectedProjectId || !startDate || !endDate) return alert('필수 항목을 입력해주세요.'); const newA = { employee_id: selectedEmployeeId, project_id: selectedProjectId, task, start_date: new Date(startDate), end_date: new Date(endDate), non_bill: nonBill }; await supabase.from('assignments').insert([newA]); resetForm(); };
   const handleUpdateAssignment = async () => { if (!editingAssignment) return; const updated = { employee_id: selectedEmployeeId, project_id: selectedProjectId, task, start_date: new Date(startDate), end_date: new Date(endDate), non_bill: nonBill }; await supabase.from('assignments').update(updated).eq('id', editingAssignment.id); resetForm(); };
 
@@ -577,7 +612,7 @@ export default function App() {
     return 'bg-blue-500';
   };
 
-  // --- Bottom Summary Data Calculation ---
+  // --- Summary Calculation ---
   const getProjectStatus = () => {
     const assignedIds = new Set(assignments.map(a => a.project_id));
     const activeProjects = projects.filter(p => assignedIds.has(p.id));
@@ -585,7 +620,6 @@ export default function App() {
     return { activeProjects, idleProjects };
   };
 
-  // [수정] Updated Utilization Calculation (Logic: Internal + Billable Task = Included in Blue Bar)
   const getEmployeeUtilization = () => {
     const billableEmployees = employees.filter(e => e.employee_type === 'billable').length;
     const totalCapacityMM = billableEmployees * 12;
@@ -605,23 +639,12 @@ export default function App() {
 
       const mm = calculateExactMM(a, yearStart, yearEnd);
 
-      // 1. Tentative (Only count for Billable employees)
       if (p.is_tentative) {
-        if (employee.employee_type === 'billable') {
-          tentativeMM += mm;
-        }
-      }
-      // 2. Non-Billable (Only count for Billable employees)
-      else if (a.non_bill) {
-        if (employee.employee_type === 'billable') {
-          nonBillableMM += mm;
-        }
-      }
-      // 3. Billable (Count for Billable AND Internal employees)
-      else {
-        if (employee.employee_type === 'billable' || employee.employee_type === 'internal') {
-          billableMM += mm;
-        }
+        if (employee.employee_type === 'billable') tentativeMM += mm;
+      } else if (a.non_bill) {
+        if (employee.employee_type === 'billable') nonBillableMM += mm;
+      } else {
+        if (employee.employee_type === 'billable' || employee.employee_type === 'internal') billableMM += mm;
       }
     });
 
@@ -633,8 +656,7 @@ export default function App() {
     const tentativePct = totalCapacityMM > 0 ? (tentativeMM / totalCapacityMM) * 100 : 0;
 
     return { 
-      totalCapacityMM, 
-      billableMM, nonBillableMM, tentativeMM,
+      totalCapacityMM, billableMM, nonBillableMM, tentativeMM,
       billablePct, nonBillPct, tentativePct,
       totalPct, billableEmployees,
       year: format(viewDate, 'yyyy')
@@ -644,7 +666,6 @@ export default function App() {
   const projectStatus = getProjectStatus();
   const utilStats = getEmployeeUtilization();
 
-  // Handler for Detail Popup
   const handleShowUtilizationDetails = (category: 'billable' | 'nonBill' | 'tentative') => {
     const yearStart = startOfYear(viewDate);
     const yearEnd = endOfYear(viewDate);
@@ -654,25 +675,13 @@ export default function App() {
       const e = employees.find(emp => emp.id === a.employee_id);
       
       if (!p || !e) return false;
-      
-      // Calculate MM for this assignment within the year
       const mm = calculateExactMM(a, yearStart, yearEnd);
       if (mm <= 0) return false;
-
       (a as any)._tempMM = mm;
 
-      // Filter Logic must match getEmployeeUtilization
-      if (category === 'tentative') {
-        return p.is_tentative && e.employee_type === 'billable';
-      }
-      if (category === 'nonBill') {
-        return !p.is_tentative && a.non_bill && e.employee_type === 'billable';
-      }
-      if (category === 'billable') {
-        // Billable Bar includes: Billable Staff + Internal Staff (on confirmed billable project)
-        const isEligibleEmployee = e.employee_type === 'billable' || e.employee_type === 'internal';
-        return !p.is_tentative && !a.non_bill && isEligibleEmployee;
-      }
+      if (category === 'tentative') return p.is_tentative && e.employee_type === 'billable';
+      if (category === 'nonBill') return !p.is_tentative && a.non_bill && e.employee_type === 'billable';
+      if (category === 'billable') return !p.is_tentative && !a.non_bill && (e.employee_type === 'billable' || e.employee_type === 'internal');
       return false;
     });
 
@@ -680,9 +689,7 @@ export default function App() {
     targetAssignments.forEach(a => {
       const pName = projects.find(p => p.id === a.project_id)?.name || 'Unknown';
       const eName = employees.find(e => e.id === a.employee_id)?.name || 'Unknown';
-      
       if (!groupedMap.has(pName)) groupedMap.set(pName, []);
-      
       groupedMap.get(pName)!.push({
         empName: eName,
         period: `${format(a.start_date, 'MM.dd')}~${format(a.end_date, 'MM.dd')}`,
@@ -691,12 +698,10 @@ export default function App() {
     });
 
     const data = Array.from(groupedMap.entries()).map(([projectName, items]) => ({
-      projectName,
-      items: items.sort((a, b) => a.empName.localeCompare(b.empName, 'ko'))
+      projectName, items: items.sort((a, b) => a.empName.localeCompare(b.empName, 'ko'))
     })).sort((a, b) => a.projectName.localeCompare(b.projectName, 'ko'));
 
-    let title = '';
-    let colorClass = '';
+    let title = '', colorClass = '';
     if (category === 'billable') { title = 'Assigned (Billable)'; colorClass = 'text-blue-600'; }
     else if (category === 'nonBill') { title = 'Non-Billable'; colorClass = 'text-orange-500'; }
     else { title = 'Tentative (미확정)'; colorClass = 'text-gray-500'; }
@@ -709,7 +714,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#F5F5F7] font-sans text-gray-900 selection:bg-blue-100 pb-20 relative">
       
-      {/* Detail Popup Modal */}
+      {/* Popup */}
       {utilPopupData && (
         <div 
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 backdrop-blur-[2px] p-4 animate-in fade-in duration-200"
@@ -724,9 +729,7 @@ export default function App() {
               <button onClick={() => setUtilPopupData(null)} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X size={20} className="text-gray-500" /></button>
             </div>
             <div className="p-4 overflow-y-auto flex-1 custom-scrollbar">
-              {utilPopupData.data.length === 0 ? (
-                <p className="text-center text-gray-400 py-4">No data found.</p>
-              ) : (
+              {utilPopupData.data.length === 0 ? <p className="text-center text-gray-400 py-4">No data found.</p> : (
                 <div className="space-y-4">
                   {utilPopupData.data.map((group) => (
                     <div key={group.projectName} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
@@ -761,23 +764,23 @@ export default function App() {
             <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shadow-sm"></span>
             Bob's SD Resource manager
           </h1>
-          <nav className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg">
-            <button 
-              onClick={() => { setCurrentTab('main'); setViewMode('year'); setViewType('project'); setViewDate(new Date()); }}
-              className={`flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 cursor-pointer ${currentTab === 'main' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-            >
-              <LayoutDashboard size={14} /> Dashboard
-            </button>
-            <button onClick={() => setCurrentTab('employees')} className={`flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 cursor-pointer ${currentTab === 'employees' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
-              <Users size={14} /> Employees
-            </button>
-            <button onClick={() => setCurrentTab('projects')} className={`flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 cursor-pointer ${currentTab === 'projects' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
-              <FolderKanban size={14} /> Projects
-            </button>
-            <button onClick={() => setCurrentTab('assignments')} className={`flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 cursor-pointer ${currentTab === 'assignments' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
-              <ClipboardList size={14} /> Assignments
-            </button>
-          </nav>
+          
+          <div className="flex items-center gap-3">
+             <button 
+                onClick={handleAdminToggle}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-full transition-all duration-300 border cursor-pointer ${isAdmin ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-100 text-gray-500 border-transparent hover:bg-gray-200'}`}
+             >
+                {isAdmin ? <Unlock size={12} /> : <Lock size={12} />}
+                {isAdmin ? 'ADMIN' : 'GUEST'}
+             </button>
+
+             <nav className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg">
+                <button onClick={() => { setCurrentTab('main'); setViewMode('year'); setViewType('project'); setViewDate(new Date()); }} className={`flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 cursor-pointer ${currentTab === 'main' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}><LayoutDashboard size={14} /> Dashboard</button>
+                <button onClick={() => setCurrentTab('employees')} className={`flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 cursor-pointer ${currentTab === 'employees' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}><Users size={14} /> Employees</button>
+                <button onClick={() => setCurrentTab('projects')} className={`flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 cursor-pointer ${currentTab === 'projects' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}><FolderKanban size={14} /> Projects</button>
+                <button onClick={() => setCurrentTab('assignments')} className={`flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-md transition-all duration-200 cursor-pointer ${currentTab === 'assignments' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}><ClipboardList size={14} /> Assignments</button>
+             </nav>
+          </div>
         </div>
       </header>
 
@@ -788,32 +791,35 @@ export default function App() {
            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 max-w-4xl mx-auto">
              <h2 className="text-lg font-bold tracking-tight mb-4">{currentTab === 'employees' ? '직원 관리' : '프로젝트 관리'}</h2>
              
-             {currentTab === 'employees' ? (
-                <div className="flex gap-2 mb-6">
-                  <input type="text" value={newEmployeeName} onChange={(e) => setNewEmployeeName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddEmployee()} placeholder="새 직원 이름" className="flex-grow bg-gray-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-lg p-2 text-sm outline-none transition-all"/>
-                  <button onClick={handleAddEmployee} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors cursor-pointer">추가</button>
-                </div>
-             ) : (
-                <div className="flex flex-col gap-3 mb-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
-                  <div className="flex gap-2 items-center">
-                    <span className="text-xs font-bold text-gray-500 uppercase w-12">New</span>
-                    <input type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddProject()} placeholder="새 프로젝트 이름" className="flex-grow bg-white border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-lg p-2 text-sm outline-none transition-all"/>
-                    <div className={`flex items-center px-3 h-9 rounded-lg border cursor-pointer select-none transition-colors ${newProjectTentative ? 'bg-gray-200 border-gray-300 text-gray-800' : 'bg-white border-gray-200 text-gray-400'}`} onClick={() => setNewProjectTentative(!newProjectTentative)}>
-                      <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center mr-1.5 ${newProjectTentative ? 'bg-gray-600 border-gray-600' : 'bg-white border-gray-300'}`}>{newProjectTentative && <Check size={10} className="text-white" />}</div>
-                      <span className="text-xs font-medium">미확정</span>
+             {isAdmin && (
+                <div className="mb-6">
+                  {currentTab === 'employees' ? (
+                    <div className="flex gap-2">
+                      <input type="text" value={newEmployeeName} onChange={(e) => setNewEmployeeName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddEmployee()} placeholder="새 직원 이름" className="flex-grow bg-gray-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-lg p-2 text-sm outline-none transition-all"/>
+                      <button onClick={handleAddEmployee} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors cursor-pointer">추가</button>
                     </div>
-                    <button onClick={handleAddProject} className="px-4 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors cursor-pointer">추가</button>
-                  </div>
-                  <div className="flex items-center gap-2 pl-14">
-                    <span className="text-xs text-gray-400">기간(선택):</span>
-                    <input type="date" className="bg-white border border-gray-200 rounded p-1.5 text-xs text-gray-700 outline-none focus:border-blue-500 cursor-pointer" value={newProjectStart} onChange={e => setNewProjectStart(e.target.value)} />
-                    <span className="text-gray-400 text-xs">~</span>
-                    <input type="date" className="bg-white border border-gray-200 rounded p-1.5 text-xs text-gray-700 outline-none focus:border-blue-500 cursor-pointer" value={newProjectEnd} onChange={e => setNewProjectEnd(e.target.value)} />
-                  </div>
+                  ) : (
+                    <div className="flex flex-col gap-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                      <div className="flex gap-2 items-center">
+                        <span className="text-xs font-bold text-gray-500 uppercase w-12">New</span>
+                        <input type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddProject()} placeholder="새 프로젝트 이름" className="flex-grow bg-white border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-lg p-2 text-sm outline-none transition-all"/>
+                        <div className={`flex items-center px-3 h-9 rounded-lg border cursor-pointer select-none transition-colors ${newProjectTentative ? 'bg-gray-200 border-gray-300 text-gray-800' : 'bg-white border-gray-200 text-gray-400'}`} onClick={() => setNewProjectTentative(!newProjectTentative)}>
+                          <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center mr-1.5 ${newProjectTentative ? 'bg-gray-600 border-gray-600' : 'bg-white border-gray-300'}`}>{newProjectTentative && <Check size={10} className="text-white" />}</div>
+                          <span className="text-xs font-medium">미확정</span>
+                        </div>
+                        <button onClick={handleAddProject} className="px-4 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors cursor-pointer">추가</button>
+                      </div>
+                      <div className="flex items-center gap-2 pl-14">
+                        <span className="text-xs text-gray-400">기간(선택):</span>
+                        <input type="date" className="bg-white border border-gray-200 rounded p-1.5 text-xs text-gray-700 outline-none focus:border-blue-500 cursor-pointer" value={newProjectStart} onChange={e => setNewProjectStart(e.target.value)} />
+                        <span className="text-gray-400 text-xs">~</span>
+                        <input type="date" className="bg-white border border-gray-200 rounded p-1.5 text-xs text-gray-700 outline-none focus:border-blue-500 cursor-pointer" value={newProjectEnd} onChange={e => setNewProjectEnd(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
                 </div>
              )}
 
-             {/* Content List with Scroll */}
              <div className="max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
                {currentTab === 'employees' ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -823,12 +829,12 @@ export default function App() {
                           <span className="font-medium text-gray-700 text-sm truncate">{item.name}</span>
                           <div 
                             onClick={(e) => { e.stopPropagation(); handleToggleEmployeeType(item as Employee); }}
-                            className={`text-[9px] px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors flex-shrink-0 font-medium tracking-tight ${getEmployeeTypeBadge(item.employee_type)}`}
+                            className={`text-[9px] px-1.5 py-0.5 rounded select-none transition-colors flex-shrink-0 font-medium tracking-tight ${isAdmin ? 'cursor-pointer' : 'cursor-default'} ${getEmployeeTypeBadge(item.employee_type)}`}
                           >
                             {getEmployeeTypeLabel(item.employee_type)}
                           </div>
                         </div>
-                        <button onClick={() => handleRemoveEmployee(item.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer flex-shrink-0 ml-2"><Trash2 size={14} /></button>
+                        {isAdmin && <button onClick={() => handleRemoveEmployee(item.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer flex-shrink-0 ml-2"><Trash2 size={14} /></button>}
                       </div>
                     ))}
                   </div>
@@ -840,25 +846,24 @@ export default function App() {
                        <div className="col-span-2 text-center">상태</div>
                        <div className="col-span-1 text-right">삭제</div>
                      </div>
-                     
                      {projects.map((item) => (
                        <div key={item.id} id={`project-row-${item.id}`} className={`grid grid-cols-12 gap-4 items-center px-4 py-2 rounded-lg transition-all border border-transparent group ${targetProjectId === item.id ? 'ring-2 ring-blue-500 bg-blue-50' : (item as Project).is_tentative ? 'bg-gray-50/80' : 'bg-white hover:shadow-sm hover:border-blue-200'}`}>
                          <div className="col-span-5">
-                           <input type="text" className={`w-full bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none text-sm py-1 font-medium transition-colors ${(item as Project).is_tentative ? 'text-gray-500' : 'text-gray-900'}`} value={item.name} onChange={(e) => setProjects(prev => prev.map(p => p.id === item.id ? { ...p, name: e.target.value } : p))} onBlur={(e) => handleUpdateProject(item as Project, { name: e.target.value })} />
+                           <input disabled={!isAdmin} type="text" className={`w-full bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none text-sm py-1 font-medium transition-colors ${!isAdmin ? 'cursor-default' : ''} ${(item as Project).is_tentative ? 'text-gray-500' : 'text-gray-900'}`} value={item.name} onChange={(e) => setProjects(prev => prev.map(p => p.id === item.id ? { ...p, name: e.target.value } : p))} onBlur={(e) => handleUpdateProject(item as Project, { name: e.target.value })} />
                          </div>
                          <div className="col-span-4 flex items-center gap-2">
-                           <input type="date" className="bg-transparent text-xs text-gray-600 outline-none border-b border-transparent hover:border-gray-300 focus:border-blue-500 transition-colors w-24 cursor-pointer" value={(item as Project).start_date ? format((item as Project).start_date!, 'yyyy-MM-dd') : ''} onChange={(e) => { const val = e.target.value ? new Date(e.target.value) : null; handleUpdateProject(item as Project, { start_date: val }); }} />
+                           <input disabled={!isAdmin} type="date" className="bg-transparent text-xs text-gray-600 outline-none border-b border-transparent hover:border-gray-300 focus:border-blue-500 transition-colors w-24 cursor-pointer disabled:cursor-default" value={(item as Project).start_date ? format((item as Project).start_date!, 'yyyy-MM-dd') : ''} onChange={(e) => { const val = e.target.value ? new Date(e.target.value) : null; handleUpdateProject(item as Project, { start_date: val }); }} />
                            <span className="text-gray-300">~</span>
-                           <input type="date" className="bg-transparent text-xs text-gray-600 outline-none border-b border-transparent hover:border-gray-300 focus:border-blue-500 transition-colors w-24 cursor-pointer" value={(item as Project).end_date ? format((item as Project).end_date!, 'yyyy-MM-dd') : ''} onChange={(e) => { const val = e.target.value ? new Date(e.target.value) : null; handleUpdateProject(item as Project, { end_date: val }); }} />
+                           <input disabled={!isAdmin} type="date" className="bg-transparent text-xs text-gray-600 outline-none border-b border-transparent hover:border-gray-300 focus:border-blue-500 transition-colors w-24 cursor-pointer disabled:cursor-default" value={(item as Project).end_date ? format((item as Project).end_date!, 'yyyy-MM-dd') : ''} onChange={(e) => { const val = e.target.value ? new Date(e.target.value) : null; handleUpdateProject(item as Project, { end_date: val }); }} />
                          </div>
                          <div className="col-span-2 flex justify-center">
-                           <label className="flex items-center gap-2 cursor-pointer p-1.5 rounded hover:bg-gray-200/50 transition-colors">
-                             <input type="checkbox" checked={(item as Project).is_tentative} onChange={() => toggleProjectTentative(item as Project)} className="w-4 h-4 border-gray-300 rounded text-gray-600 focus:ring-gray-500 cursor-pointer" />
+                           <label className={`flex items-center gap-2 p-1.5 rounded transition-colors ${isAdmin ? 'cursor-pointer hover:bg-gray-200/50' : 'cursor-default'}`}>
+                             <input disabled={!isAdmin} type="checkbox" checked={(item as Project).is_tentative} onChange={() => toggleProjectTentative(item as Project)} className="w-4 h-4 border-gray-300 rounded text-gray-600 focus:ring-gray-500 cursor-pointer disabled:cursor-default" />
                              <span className={`text-xs ${(item as Project).is_tentative ? 'text-gray-600 font-medium' : 'text-gray-400'}`}>미확정</span>
                            </label>
                          </div>
                          <div className="col-span-1 text-right">
-                           <button onClick={() => handleRemoveProject(item.id)} className="text-gray-300 hover:text-red-500 transition-colors cursor-pointer p-1"><Trash2 size={16} /></button>
+                           {isAdmin && <button onClick={() => handleRemoveProject(item.id)} className="text-gray-300 hover:text-red-500 transition-colors cursor-pointer p-1"><Trash2 size={16} /></button>}
                          </div>
                        </div>
                      ))}
@@ -868,35 +873,44 @@ export default function App() {
            </div>
         )}
 
-        {/* --- Assignments Form --- */}
+        {/* --- Assignments Form (Visible only to Admin) --- */}
         {currentTab === 'assignments' && (
           <div className={`max-w-4xl mx-auto transition-all duration-300 ease-in-out border rounded-2xl p-6 mb-10 ${editingAssignment ? 'bg-blue-50/50 border-blue-200 shadow-[0_0_0_4px_rgba(59,130,246,0.1)]' : 'bg-white border-gray-100 shadow-sm'}`}>
-            <div className="flex justify-between items-start mb-6">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${editingAssignment ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}>{editingAssignment ? <RefreshCcw size={20} className="animate-spin-slow" /> : <Plus size={20} />}</div>
-                <div><h2 className="text-xl font-bold tracking-tight text-gray-900">{editingAssignment ? '기존 작업 수정 중' : '새 작업 할당'}</h2></div>
+            {isAdmin ? (
+              <>
+                <div className="flex justify-between items-start mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${editingAssignment ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}>{editingAssignment ? <RefreshCcw size={20} className="animate-spin-slow" /> : <Plus size={20} />}</div>
+                    <div><h2 className="text-xl font-bold tracking-tight text-gray-900">{editingAssignment ? '기존 작업 수정 중' : '새 작업 할당'}</h2></div>
+                  </div>
+                  {editingAssignment && (<button onClick={resetForm} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all text-xs font-medium cursor-pointer"><Plus size={14} /> 신규 모드로 전환</button>)}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Employee</label><div className="relative"><select className="w-full bg-gray-50 hover:bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-xl p-3 pl-9 transition-all outline-none appearance-none font-medium text-sm text-gray-700 cursor-pointer" value={selectedEmployeeId} onChange={e => setSelectedEmployeeId(e.target.value)}><option value="">직원을 선택하세요</option>{employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select><User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /></div></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Project</label><div className="relative"><select className="w-full bg-gray-50 hover:bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-xl p-3 pl-9 transition-all outline-none appearance-none font-medium text-sm text-gray-700 cursor-pointer" value={selectedProjectId} onChange={handleProjectSelect}><option value="">프로젝트를 선택하세요</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name + (p.is_tentative ? ' (미확정)' : '')}</option>)}</select><Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /></div></div>
+                  <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Period</label><div className="flex items-center gap-3 bg-gray-50 p-1.5 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/10 transition-all"><div className="flex items-center flex-1 pl-2"><CalendarIcon size={16} className="text-gray-400 mr-2" /><input type="date" className="w-full bg-transparent p-2 outline-none text-gray-700 font-medium text-sm cursor-pointer" value={startDate} onChange={e => setStartDate(e.target.value)} /></div><span className="text-gray-400 font-light px-2 text-sm">to</span><div className="flex items-center flex-1"><input type="date" className="w-full bg-transparent p-2 outline-none text-gray-700 font-medium text-sm text-right pr-4 cursor-pointer" value={endDate} onChange={e => setEndDate(e.target.value)} /></div></div></div>
+                  <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Details</label><div className="flex gap-3"><input type="text" placeholder="수행 업무 상세 (선택 사항)" className="flex-grow bg-gray-50 hover:bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-xl p-3 outline-none transition-all font-medium text-sm text-gray-700 placeholder-gray-400" value={task} onChange={e => setTask(e.target.value)} /><div className={`flex items-center px-4 rounded-xl border cursor-pointer transition-all select-none ${nonBill ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-gray-50 border-transparent hover:bg-gray-100 text-gray-500'}`} onClick={() => setNonBill(!nonBill)}><div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 transition-colors ${nonBill ? 'bg-orange-500 border-orange-500' : 'border-gray-300 bg-white'}`}>{nonBill && <Check size={10} className="text-white" />}</div><span className="text-xs font-bold">Non-Bill</span></div></div></div>
+                </div>
+                <div className="mt-6 pt-5 border-t border-gray-100 flex items-center justify-end gap-2">
+                  {editingAssignment ? (<><button onClick={async () => { if(confirm('정말 삭제하시겠습니까?')) { await supabase.from('assignments').delete().eq('id', editingAssignment.id); resetForm(); }}} className="px-4 py-2.5 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 font-medium transition-colors text-xs flex items-center gap-1 cursor-pointer"><Trash2 size={14} /> 삭제</button><button onClick={handleUpdateAssignment} className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-500/30 active:scale-[0.98] transition-all flex items-center gap-1 text-sm cursor-pointer"><Check size={16} /> 변경 저장</button></>) : (<button onClick={handleAssign} className="w-full md:w-auto px-8 py-2.5 rounded-xl bg-gray-900 hover:bg-black text-white font-bold shadow-lg shadow-gray-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"><Plus size={16} /> 할당 추가</button>)}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+                <Lock size={32} className="mb-2 opacity-50" />
+                <p className="text-sm font-medium">관리자(Admin) 모드에서만 할당을 추가/수정할 수 있습니다.</p>
               </div>
-              {editingAssignment && (<button onClick={resetForm} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all text-xs font-medium cursor-pointer"><Plus size={14} /> 신규 모드로 전환</button>)}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="space-y-1"><label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Employee</label><div className="relative"><select className="w-full bg-gray-50 hover:bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-xl p-3 pl-9 transition-all outline-none appearance-none font-medium text-sm text-gray-700 cursor-pointer" value={selectedEmployeeId} onChange={e => setSelectedEmployeeId(e.target.value)}><option value="">직원을 선택하세요</option>{employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select><User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /></div></div>
-              <div className="space-y-1"><label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Project</label><div className="relative"><select className="w-full bg-gray-50 hover:bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-xl p-3 pl-9 transition-all outline-none appearance-none font-medium text-sm text-gray-700 cursor-pointer" value={selectedProjectId} onChange={handleProjectSelect}><option value="">프로젝트를 선택하세요</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name + (p.is_tentative ? ' (미확정)' : '')}</option>)}</select><Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /></div></div>
-              <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Period</label><div className="flex items-center gap-3 bg-gray-50 p-1.5 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/10 transition-all"><div className="flex items-center flex-1 pl-2"><CalendarIcon size={16} className="text-gray-400 mr-2" /><input type="date" className="w-full bg-transparent p-2 outline-none text-gray-700 font-medium text-sm cursor-pointer" value={startDate} onChange={e => setStartDate(e.target.value)} /></div><span className="text-gray-400 font-light px-2 text-sm">to</span><div className="flex items-center flex-1"><input type="date" className="w-full bg-transparent p-2 outline-none text-gray-700 font-medium text-sm text-right pr-4 cursor-pointer" value={endDate} onChange={e => setEndDate(e.target.value)} /></div></div></div>
-              <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Details</label><div className="flex gap-3"><input type="text" placeholder="수행 업무 상세 (선택 사항)" className="flex-grow bg-gray-50 hover:bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 rounded-xl p-3 outline-none transition-all font-medium text-sm text-gray-700 placeholder-gray-400" value={task} onChange={e => setTask(e.target.value)} /><div className={`flex items-center px-4 rounded-xl border cursor-pointer transition-all select-none ${nonBill ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-gray-50 border-transparent hover:bg-gray-100 text-gray-500'}`} onClick={() => setNonBill(!nonBill)}><div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 transition-colors ${nonBill ? 'bg-orange-500 border-orange-500' : 'border-gray-300 bg-white'}`}>{nonBill && <Check size={10} className="text-white" />}</div><span className="text-xs font-bold">Non-Bill</span></div></div></div>
-            </div>
-            <div className="mt-6 pt-5 border-t border-gray-100 flex items-center justify-end gap-2">
-              {editingAssignment ? (<><button onClick={async () => { if(confirm('정말 삭제하시겠습니까?')) { await supabase.from('assignments').delete().eq('id', editingAssignment.id); resetForm(); }}} className="px-4 py-2.5 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 font-medium transition-colors text-xs flex items-center gap-1 cursor-pointer"><Trash2 size={14} /> 삭제</button><button onClick={handleUpdateAssignment} className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-500/30 active:scale-[0.98] transition-all flex items-center gap-1 text-sm cursor-pointer"><Check size={16} /> 변경 저장</button></>) : (<button onClick={handleAssign} className="w-full md:w-auto px-8 py-2.5 rounded-xl bg-gray-900 hover:bg-black text-white font-bold shadow-lg shadow-gray-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"><Plus size={16} /> 할당 추가</button>)}
-            </div>
+            )}
           </div>
         )}
 
-        {/* --- Dashboard --- */}
+        {/* --- Dashboard (Same as before) --- */}
         <section className="mt-4 space-y-4 relative z-40">
           <div className="flex flex-col md:flex-row justify-between items-center bg-white/60 backdrop-blur-sm p-1.5 rounded-xl border border-white/50 shadow-sm sticky top-16 z-50">
              <div className="flex items-center gap-2 pl-1 w-full md:w-auto">
               <div className="w-56"><SegmentedControl options={[{value: 'project', label: 'Project View'}, {value: 'employee', label: 'Employee View'}]} value={viewType} onChange={setViewType} /></div>
               <div className={`transition-all duration-300 overflow-hidden ${checkedAssignmentIds.size > 0 ? 'w-auto opacity-100' : 'w-0 opacity-0'}`}>
-                <button onClick={handleBulkDeleteAssignments} className="flex items-center gap-1 bg-red-50 text-red-600 px-3 py-1.5 rounded-md text-xs font-medium hover:bg-red-100 transition-colors whitespace-nowrap cursor-pointer"><Trash2 size={12}/> <span>{checkedAssignmentIds.size}개 할당 삭제</span></button>
+                {isAdmin && <button onClick={handleBulkDeleteAssignments} className="flex items-center gap-1 bg-red-50 text-red-600 px-3 py-1.5 rounded-md text-xs font-medium hover:bg-red-100 transition-colors whitespace-nowrap cursor-pointer"><Trash2 size={12}/> <span>{checkedAssignmentIds.size}개 할당 삭제</span></button>}
               </div>
             </div>
             <div className="flex items-center gap-2 pr-1 w-full md:w-auto justify-end mt-2 md:mt-0">
@@ -988,7 +1002,6 @@ export default function App() {
                              }}
                              className={`flex items-center gap-2 ${row.type === 'project' ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
                            >
-                             {/* Employee Color Bar */}
                              {viewType === 'employee' && employeeData && (
                                <div className={`w-1 h-3 rounded-full flex-shrink-0 ${getEmployeeColorIndicator(employeeData.employee_type)}`} title={getEmployeeTypeLabel(employeeData.employee_type)} />
                              )}
@@ -1008,11 +1021,13 @@ export default function App() {
                              const targetName = row.type === 'project' ? employees.find(e => e.id === a.employee_id)?.name : projects.find(p => p.id === a.project_id)?.name;
                              return (
                                <div key={a.id} className="h-5 mb-0.5 flex items-center gap-2 group/item">
-                                 <label className="flex items-center justify-center p-1 rounded-full cursor-pointer hover:bg-gray-200/50 transition-colors">
-                                    <input type="checkbox" className="peer appearance-none w-3.5 h-3.5 border-2 border-gray-300 rounded checked:bg-blue-500 checked:border-blue-500 transition-all cursor-pointer" checked={checkedAssignmentIds.has(a.id)} onChange={() => toggleAssignmentCheck(a.id)}/>
-                                    <Check size={8} className="absolute text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" strokeWidth={4} />
-                                 </label>
-                                 <div onClick={() => handleEditAssignment(a)} className="flex items-center gap-2 cursor-pointer p-1 -ml-1 rounded transition-colors hover:bg-blue-50 flex-grow w-full">
+                                 {isAdmin && (
+                                   <label className="flex items-center justify-center p-1 rounded-full cursor-pointer hover:bg-gray-200/50 transition-colors">
+                                      <input type="checkbox" className="peer appearance-none w-3.5 h-3.5 border-2 border-gray-300 rounded checked:bg-blue-500 checked:border-blue-500 transition-all cursor-pointer" checked={checkedAssignmentIds.has(a.id)} onChange={() => toggleAssignmentCheck(a.id)}/>
+                                      <Check size={8} className="absolute text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" strokeWidth={4} />
+                                   </label>
+                                 )}
+                                 <div onClick={() => { if(isAdmin) handleEditAssignment(a); }} className={`flex items-center gap-2 p-1 -ml-1 rounded transition-colors flex-grow w-full ${isAdmin ? 'cursor-pointer hover:bg-blue-50' : 'cursor-default'}`}>
                                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${getDotColorClass(a)}`}></div>
                                    
                                    <div className="flex items-center text-xs w-full">
@@ -1059,7 +1074,6 @@ export default function App() {
                           }
 
                           let cellBgClass = '';
-                          // [Priority] Overworked (Red) > Today (Amber) > Tentative (Gray)
                           if (isOver) cellBgClass = '!bg-red-100 ring-1 ring-inset ring-red-200';
                           else if (isHighlighted) cellBgClass = 'bg-amber-50';
                           else if (isProjectDuration && currentProject?.is_tentative && !hasAssignmentOnThisDay) cellBgClass = 'bg-gray-100/80';
@@ -1079,11 +1093,12 @@ export default function App() {
                                      return (
                                       <div 
                                         key={a.id} 
-                                        className={`h-5 mb-0.5 w-full rounded-[2px] shadow-sm transition-transform hover:scale-110 hover:z-10 cursor-pointer
+                                        className={`h-5 mb-0.5 w-full rounded-[2px] shadow-sm transition-transform hover:scale-110 hover:z-10 
+                                          ${isAdmin ? 'cursor-pointer' : 'cursor-default'}
                                           ${getBarColorClass(a)}
                                         `}
                                         title={`${targetName}`}
-                                        onClick={() => handleEditAssignment(a)}
+                                        onClick={() => { if(isAdmin) handleEditAssignment(a); }}
                                       ></div>
                                      );
                                   } else {
@@ -1153,7 +1168,7 @@ export default function App() {
                    </div>
                 </div>
 
-                {/* [MODIFIED] Util Bar: Correct 3D Effect with removed Overflow Hidden on Parent */}
+                {/* Util Bar with 3D Effect */}
                 <div className="relative h-4 mt-2 mb-1 w-full flex">
                   <div 
                     className="h-full bg-blue-600 transition-all duration-200 ease-out cursor-pointer hover:scale-y-125 hover:shadow-lg hover:z-10 origin-bottom first:rounded-l-full last:rounded-r-full" 
@@ -1173,7 +1188,6 @@ export default function App() {
                     title={`Tentative`}
                     onClick={() => handleShowUtilizationDetails('tentative')}
                   ></div>
-                  {/* Background Track (behind the bars) */}
                   <div className="absolute inset-0 bg-gray-200 rounded-full -z-10"></div>
                 </div>
 
