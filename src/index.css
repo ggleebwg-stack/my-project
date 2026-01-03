@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 여기 아래에 나중에 커스텀 CSS 추가하면 돼요 (예: 폰트, 애니메이션 등) */

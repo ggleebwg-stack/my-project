@@ -1,20 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
+import { Inter } from "next/font/google";
+import "./globals.css"; // 글로벌 CSS (Tailwind 등)
+import { Toaster } from 'sonner'; // Toast 컴포넌트
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"] });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-// ▼ 이 부분을 수정하세요 ▼
 export const metadata: Metadata = {
-  title: "Bob's SD Resource", // 여기를 수정!
+  title: "Bob's SD Resource manager",
   description: "Resource Management Dashboard",
 };
 
@@ -24,11 +16,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="ko">
+      <body className={inter.className}>
         {children}
+        {/* Toast 알림 컴포넌트 (최상위 배치) */}
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   );
